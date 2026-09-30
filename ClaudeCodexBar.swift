@@ -6,9 +6,14 @@ import SwiftUI
 
 struct Failure: Error { let message: String }
 
-struct Reading {
+struct Window {
     let percent: Int
     let resetsAt: Date?
+}
+
+struct Reading {
+    let week: Window
+    let session: Window?  // 5-hour limit, when the service reports one
 }
 
 final class Source {
@@ -104,11 +109,17 @@ func fetchClaude() throws -> Reading {
     guard let usage = response["response"] as? [String: Any] else {
         throw Failure(message: response["error"] as? String ?? "unexpected reply from claude")
     }
-    guard let week = (usage["rate_limits"] as? [String: Any])?["seven_day"] as? [String: Any],
-          let used = week["utilization"] as? Double else {
+    let limits = usage["rate_limits"] as? [String: Any]
+    guard let week = claudeWindow(limits?["seven_day"]) else {
         throw Failure(message: "no weekly limit reported (is claude signed in to a Claude plan?)")
     }
-    return Reading(percent: Int(used.rounded()), resetsAt: parseISODate(week["resets_at"] as? String))
+    return Reading(week: week, session: claudeWindow(limits?["five_hour"]))
+}
+
+/// Claude reports each limit as {"utilization": 88, "resets_at": "2026-10-01T22:59:59.579+00:00"}.
+func claudeWindow(_ value: Any?) -> Window? {
+    guard let limit = value as? [String: Any], let used = limit["utilization"] as? Double else { return nil }
+    return Window(percent: Int(used.rounded()), resetsAt: parseISODate(limit["resets_at"] as? String))
 }
 
 func fetchCodex() throws -> Reading {
@@ -120,14 +131,18 @@ func fetchCodex() throws -> Reading {
     if let error = reply["error"] as? [String: Any] {
         throw Failure(message: error["message"] as? String ?? "error from codex")
     }
-    // The weekly window is "primary" or "secondary" depending on the plan, so find it by its length.
+    // Limits come as "primary" and "secondary" in an order that depends on the plan, so find them by length.
     let limits = (reply["result"] as? [String: Any])?["rateLimits"] as? [String: Any] ?? [:]
-    guard let week = ["primary", "secondary"].compactMap({ limits[$0] as? [String: Any] })
-            .first(where: { $0["windowDurationMins"] as? Int == 7 * 24 * 60 }),
-          let used = week["usedPercent"] as? Int else {
+    let windows = ["primary", "secondary"].compactMap { limits[$0] as? [String: Any] }
+    func window(minutes: Int) -> Window? {
+        guard let limit = windows.first(where: { $0["windowDurationMins"] as? Int == minutes }),
+              let used = limit["usedPercent"] as? Int else { return nil }
+        return Window(percent: used, resetsAt: (limit["resetsAt"] as? Double).map(Date.init(timeIntervalSince1970:)))
+    }
+    guard let week = window(minutes: 7 * 24 * 60) else {
         throw Failure(message: "no weekly limit reported (is codex signed in with ChatGPT?)")
     }
-    return Reading(percent: used, resetsAt: (week["resetsAt"] as? Double).map(Date.init(timeIntervalSince1970:)))
+    return Reading(week: week, session: window(minutes: 5 * 60))  // Codex has a 5-hour limit only on some plans and days
 }
 
 func parseISODate(_ string: String?) -> Date? {
@@ -170,12 +185,13 @@ let countdownFormat: DateComponentsFormatter = {
     return f
 }()
 
-/// One tool in the dropdown: logo, name, percentage, a bar colored by how close it is to the limit, and the reset time.
+/// One tool in the dropdown: logo, name, weekly percentage with a bar colored by how close it is to the limit,
+/// the reset time, and the 5-hour session limit when the service reports one.
 struct UsageCard: View {
     let source: Source
 
     var body: some View {
-        let percent = source.reading?.percent
+        let week = source.reading?.week
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 Image(nsImage: source.logo).renderingMode(.template).resizable()
@@ -185,24 +201,34 @@ struct UsageCard: View {
                     Text("Weekly limit").font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text(percent.map { "\($0)%" } ?? "–").font(.system(size: 22, weight: .bold, design: .rounded)).monospacedDigit()
+                Text(week.map { "\($0.percent)%" } ?? "–").font(.system(size: 22, weight: .bold, design: .rounded)).monospacedDigit()
             }
-            GeometryReader { bar in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(.quaternary)
-                    Capsule().fill(levelColor(percent ?? 0).gradient)
-                        .frame(width: bar.size.width * CGFloat(min(percent ?? 0, 100)) / 100)
-                }
-            }
-            .frame(height: 6)
+            UsageBar(percent: week?.percent ?? 0, height: 6)
             Group {
-                if let resets = source.reading?.resetsAt {
-                    Text("Resets in \(countdownFormat.string(from: max(0, resets.timeIntervalSinceNow)) ?? "") · \(resetFormat.string(from: resets))")
+                if let resets = week?.resetsAt {
+                    Text("Resets in \(countdown(to: resets)) · \(resetFormat.string(from: resets))")
                 } else if source.reading == nil && source.error == nil {
                     Text("Checking…")
                 }
             }
             .font(.system(size: 11)).foregroundStyle(.secondary)
+            if let session = source.reading?.session {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "clock").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                        Text("5-hour session").font(.system(size: 11, weight: .medium))
+                        if let resets = session.resetsAt {
+                            Text("· resets in \(countdown(to: resets))").font(.system(size: 11)).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text("\(session.percent)%").font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit()
+                    }
+                    UsageBar(percent: session.percent, height: 4)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
+                .padding(.top, 2)
+            }
             if let error = source.error {
                 Label(error + (source.updated.map { " · last updated \(timeFormat.string(from: $0))" } ?? ""),
                       systemImage: "exclamationmark.triangle.fill")
@@ -212,6 +238,26 @@ struct UsageCard: View {
         .padding(.horizontal, 14).padding(.vertical, 10)
         .frame(width: menuWidth)
     }
+}
+
+/// A capsule filled to `percent`, colored by how close it is to the limit.
+struct UsageBar: View {
+    let percent: Int
+    let height: CGFloat
+
+    var body: some View {
+        GeometryReader { bar in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.quaternary)
+                Capsule().fill(levelColor(percent).gradient).frame(width: bar.size.width * CGFloat(min(percent, 100)) / 100)
+            }
+        }
+        .frame(height: height)
+    }
+}
+
+func countdown(to date: Date) -> String {
+    countdownFormat.string(from: max(0, date.timeIntervalSinceNow)) ?? ""
 }
 
 /// Green, then yellow, orange and red as usage gets closer to the limit.
@@ -265,7 +311,7 @@ final class ClaudeCodexBar: NSObject, NSApplicationDelegate {
     }
 
     func render() {
-        let values = sources.map { ($0, $0.reading.map { "\($0.percent)%" } ?? "–") }
+        let values = sources.map { ($0, $0.reading.map { "\($0.week.percent)%" } ?? "–") }
         statusItem.button?.image = barImage(values.map { ($0.0.logo, $0.1) })
         statusItem.button?.setAccessibilityLabel(values.map { "\($0.0.name) \($0.1)" }.joined(separator: ", "))  // the image has no text for VoiceOver
 
