@@ -1,6 +1,7 @@
 // ClaudeCodexBar: shows how much of your weekly Claude and Codex limits you've used, in the menu bar.
 // It asks the official `claude` and `codex` CLIs (which handle their own sign-in) every 5 minutes.
 import AppKit
+import ServiceManagement
 
 struct Failure: Error { let message: String }
 
@@ -125,8 +126,11 @@ func fetchCodex() throws -> Reading {
 }
 
 func parseISODate(_ string: String?) -> Date? {
-    // Claude sends microseconds, which ISO8601DateFormatter can't parse; they don't matter here.
-    string.flatMap { ISO8601DateFormatter().date(from: $0.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)) }
+    // Claude sends microseconds, which ISO8601DateFormatter can't parse, and its reset times land just
+    // either side of the minute (22:59:59.9 or 23:00:00.1), so drop the fraction and round to the minute.
+    guard let string, let date = ISO8601DateFormatter().date(
+        from: string.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)) else { return nil }
+    return Date(timeIntervalSince1970: (date.timeIntervalSince1970 / 60).rounded() * 60)
 }
 
 /// Small caption over the value, like the Stats app's "RAM / 75%".
@@ -208,8 +212,24 @@ final class ClaudeCodexBar: NSObject, NSApplicationDelegate {
         }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Refresh Now", action: #selector(refresh), keyEquivalent: "r").target = self
+        let openAtLogin = menu.addItem(withTitle: "Open at Login", action: #selector(toggleOpenAtLogin), keyEquivalent: "")
+        openAtLogin.target = self
+        openAtLogin.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(withTitle: "Quit ClaudeCodexBar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
+    }
+
+    @objc func toggleOpenAtLogin() {
+        do {
+            if SMAppService.mainApp.status == .enabled {
+                try SMAppService.mainApp.unregister()
+            } else {
+                try SMAppService.mainApp.register()
+            }
+        } catch {
+            SMAppService.openSystemSettingsLoginItems()  // e.g. turned off in System Settings: let the user allow it there
+        }
+        render()
     }
 }
 

@@ -20,7 +20,7 @@ ClaudeCodexBar shows how much of your **weekly** Claude Code and Codex limits yo
 
 If you don't see it, your menu bar is probably full. If your Mac has an arrow that reveals hidden menu bar items, click it, then hold ⌘ and drag ClaudeCodexBar to a visible spot. Otherwise it may be hidden behind the notch, so make room by removing other icons.
 
-ClaudeCodexBar doesn't start by itself after a restart. To open it automatically, add it under **System Settings → General → Login Items**.
+To start ClaudeCodexBar automatically when your Mac starts, click it in the menu bar and choose **Open at Login**.
 
 ## Requirements
 
@@ -36,7 +36,7 @@ The menu bar shows the percentage of each weekly limit you've used. Click it to 
 
 - each percentage, when that limit resets, and when it was last updated
 - the error from the last check, if there was one
-- **Refresh Now** (⌘R) and **Quit** (⌘Q)
+- **Refresh Now** (⌘R), **Open at Login** and **Quit** (⌘Q)
 
 ## How it works
 
