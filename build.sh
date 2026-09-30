@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 
 rm -rf build
 mkdir -p build/ClaudeCodexBar.app/Contents/MacOS build/ClaudeCodexBar.app/Contents/Resources
-cp icons/*.pdf build/ClaudeCodexBar.app/Contents/Resources/
+cp icons/*.pdf icons/AppIcon.icns build/ClaudeCodexBar.app/Contents/Resources/
 for arch in arm64 x86_64; do
     swiftc -O -swift-version 5 -target $arch-apple-macos13.0 -o build/ClaudeCodexBar-$arch ClaudeCodexBar.swift
 done

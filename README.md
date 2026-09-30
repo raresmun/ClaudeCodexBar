@@ -1,3 +1,5 @@
+<img src="docs/icon.png" width="96" alt="ClaudeCodexBar app icon">
+
 # ClaudeCodexBar
 
 Easy to use and simple Claude and Codex usage bar for macOS.
