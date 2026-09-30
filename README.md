@@ -4,7 +4,7 @@ Easy to use and simple Claude and Codex usage bar for macOS.
 
 ClaudeCodexBar shows how much of your **weekly** Claude Code and Codex limits you've used, right in the menu bar. It refreshes every 5 minutes.
 
-<img src="docs/menubar.png" width="190" alt="ClaudeCodexBar in the menu bar showing CLAUDE 42% and CODEX 17%">
+<img src="docs/menubar.png" width="266" alt="ClaudeCodexBar in the menu bar: the Claude logo with 42% and the OpenAI logo with 17%">
 
 ## Download
 
@@ -16,7 +16,7 @@ ClaudeCodexBar shows how much of your **weekly** Claude Code and Codex limits yo
 2. Open ClaudeCodexBar. The first time, macOS says it can't verify the app, because the app isn't notarized by Apple. You only need to get past this once:
    - **macOS 15 or later:** click **Done**, go to **System Settings → Privacy & Security**, scroll down, click **Open Anyway** and confirm.
    - **macOS 13–14:** right-click the app and choose **Open**.
-3. Look for **CLAUDE** and **CODEX** in the menu bar. The numbers appear within a few seconds.
+3. Look for the Claude and OpenAI logos in the menu bar, each with a percentage next to it. The numbers appear within a few seconds.
 
 If you don't see it, your menu bar is probably full. If your Mac has an arrow that reveals hidden menu bar items, click it, then hold ⌘ and drag ClaudeCodexBar to a visible spot. Otherwise it may be hidden behind the notch, so make room by removing other icons.
 
@@ -64,7 +64,7 @@ cd ClaudeCodexBar
 ./build.sh
 ```
 
-`build.sh` builds a universal app (Apple silicon and Intel, macOS 13 or later), installs it to `~/Applications`, starts it and creates `ClaudeCodexBar.dmg`. All the code is in one file, [`ClaudeCodexBar.swift`](ClaudeCodexBar.swift).
+`build.sh` builds a universal app (Apple silicon and Intel, macOS 13 or later), installs it to `~/Applications`, starts it and creates `ClaudeCodexBar.dmg`. All the code is in one file, [`ClaudeCodexBar.swift`](ClaudeCodexBar.swift), and the two logos are in [`icons`](icons).
 
 ## Limitations
 
@@ -76,4 +76,4 @@ cd ClaudeCodexBar
 
 MIT. See [LICENSE](LICENSE).
 
-ClaudeCodexBar is not affiliated with Anthropic or OpenAI. Claude and Codex are trademarks of their respective owners.
+The Claude and OpenAI logos come from [Simple Icons](https://simpleicons.org) (CC0). Claude and its logo are trademarks of Anthropic; Codex, OpenAI and the OpenAI logo are trademarks of OpenAI. ClaudeCodexBar is not affiliated with or endorsed by either company.

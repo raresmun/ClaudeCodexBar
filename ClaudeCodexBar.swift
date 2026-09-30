@@ -12,14 +12,16 @@ struct Reading {
 
 final class Source {
     let name: String
+    let logo: NSImage
     let fetch: () throws -> Reading
     var reading: Reading?  // last good value; kept when a refresh fails
     var updated: Date?
     var error: String?
     var busy = false
 
-    init(_ name: String, _ fetch: @escaping () throws -> Reading) {
+    init(_ name: String, logo: String, _ fetch: @escaping () throws -> Reading) {
         self.name = name
+        self.logo = Bundle.main.image(forResource: logo) ?? NSImage()  // icons/*.pdf, copied into the app by build.sh
         self.fetch = fetch
     }
 }
@@ -133,23 +135,20 @@ func parseISODate(_ string: String?) -> Date? {
     return Date(timeIntervalSince1970: (date.timeIntervalSince1970 / 60).rounded() * 60)
 }
 
-/// Small caption over the value, like the Stats app's "RAM / 75%".
-func barImage(_ columns: [(caption: String, value: String)]) -> NSImage {
-    let captionFont: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 7, weight: .semibold)]
-    let valueFont: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)]
-    let widths = columns.map { max(($0.caption as NSString).size(withAttributes: captionFont).width,
-                                   ($0.value as NSString).size(withAttributes: valueFont).width).rounded(.up) }
-    let gap: CGFloat = 8
-    let size = NSSize(width: widths.reduce(0, +) + gap * CGFloat(columns.count - 1), height: 22)
-    let image = NSImage(size: size, flipped: true) { _ in
+/// Each tool's logo followed by its percentage, on one line.
+func barImage(_ items: [(logo: NSImage, value: String)]) -> NSImage {
+    let font: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium)]
+    let logoSize: CGFloat = 15, logoGap: CGFloat = 3, itemGap: CGFloat = 9, height: CGFloat = 22
+    let widths = items.map { logoSize + logoGap + ($0.value as NSString).size(withAttributes: font).width.rounded(.up) }
+    let size = NSSize(width: widths.reduce(0, +) + itemGap * CGFloat(items.count - 1), height: height)
+    let image = NSImage(size: size, flipped: false) { _ in
         var x: CGFloat = 0
-        for (column, width) in zip(columns, widths) {
-            let caption = column.caption as NSString, value = column.value as NSString
-            caption.draw(at: NSPoint(x: x + (width - caption.size(withAttributes: captionFont).width) / 2, y: 1),
-                         withAttributes: captionFont)
-            value.draw(at: NSPoint(x: x + (width - value.size(withAttributes: valueFont).width) / 2, y: 8),
-                       withAttributes: valueFont)
-            x += width + gap
+        for (item, width) in zip(items, widths) {
+            item.logo.draw(in: NSRect(x: x, y: (height - logoSize) / 2, width: logoSize, height: logoSize))
+            let value = item.value as NSString
+            value.draw(at: NSPoint(x: x + logoSize + logoGap, y: (height - value.size(withAttributes: font).height) / 2),
+                       withAttributes: font)
+            x += width + itemGap
         }
         return true
     }
@@ -159,7 +158,7 @@ func barImage(_ columns: [(caption: String, value: String)]) -> NSImage {
 
 final class ClaudeCodexBar: NSObject, NSApplicationDelegate {
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    let sources = [Source("Claude", fetchClaude), Source("Codex", fetchCodex)]
+    let sources = [Source("Claude", logo: "claude", fetchClaude), Source("Codex", logo: "openai", fetchCodex)]
     let resetFormat = DateFormatter(), timeFormat = DateFormatter()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -192,9 +191,9 @@ final class ClaudeCodexBar: NSObject, NSApplicationDelegate {
     }
 
     func render() {
-        let values = sources.map { ($0.name, $0.reading.map { "\($0.percent)%" } ?? "–") }
-        statusItem.button?.image = barImage(values.map { ($0.0.uppercased(), $0.1) })
-        statusItem.button?.setAccessibilityLabel(values.map { "\($0.0) \($0.1)" }.joined(separator: ", "))  // the image has no text for VoiceOver
+        let values = sources.map { ($0, $0.reading.map { "\($0.percent)%" } ?? "–") }
+        statusItem.button?.image = barImage(values.map { ($0.0.logo, $0.1) })
+        statusItem.button?.setAccessibilityLabel(values.map { "\($0.0.name) \($0.1)" }.joined(separator: ", "))  // the image has no text for VoiceOver
 
         let menu = NSMenu()
         for source in sources {
