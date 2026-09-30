@@ -2,6 +2,7 @@
 // It asks the official `claude` and `codex` CLIs (which handle their own sign-in) every 5 minutes.
 import AppKit
 import ServiceManagement
+import SwiftUI
 
 struct Failure: Error { let message: String }
 
@@ -13,15 +14,17 @@ struct Reading {
 final class Source {
     let name: String
     let logo: NSImage
+    let tint: Color  // logo color in the dropdown
     let fetch: () throws -> Reading
     var reading: Reading?  // last good value; kept when a refresh fails
     var updated: Date?
     var error: String?
     var busy = false
 
-    init(_ name: String, logo: String, _ fetch: @escaping () throws -> Reading) {
+    init(_ name: String, logo: String, tint: Color, _ fetch: @escaping () throws -> Reading) {
         self.name = name
-        self.logo = Bundle.main.image(forResource: logo) ?? NSImage()  // icons/*.pdf, copied into the app by build.sh
+        self.logo = NSImage(named: logo) ?? NSImage()  // icons/*.pdf, copied into the app by build.sh
+        self.tint = tint
         self.fetch = fetch
     }
 }
@@ -156,14 +159,85 @@ func barImage(_ items: [(logo: NSImage, value: String)]) -> NSImage {
     return image
 }
 
+let menuWidth: CGFloat = 290
+let resetFormat: DateFormatter = { let f = DateFormatter(); f.setLocalizedDateFormatFromTemplate("EEEjmm"); return f }()
+let timeFormat: DateFormatter = { let f = DateFormatter(); f.timeStyle = .short; return f }()
+let countdownFormat: DateComponentsFormatter = {
+    let f = DateComponentsFormatter()
+    f.unitsStyle = .abbreviated
+    f.allowedUnits = [.day, .hour, .minute]
+    f.maximumUnitCount = 2
+    return f
+}()
+
+/// One tool in the dropdown: logo, name, percentage, a bar colored by how close it is to the limit, and the reset time.
+struct UsageCard: View {
+    let source: Source
+
+    var body: some View {
+        let percent = source.reading?.percent
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(nsImage: source.logo).renderingMode(.template).resizable()
+                    .frame(width: 22, height: 22).foregroundStyle(source.tint)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(source.name).font(.system(size: 13, weight: .semibold))
+                    Text("Weekly limit").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(percent.map { "\($0)%" } ?? "–").font(.system(size: 22, weight: .bold, design: .rounded)).monospacedDigit()
+            }
+            GeometryReader { bar in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.quaternary)
+                    Capsule().fill(levelColor(percent ?? 0).gradient)
+                        .frame(width: bar.size.width * CGFloat(min(percent ?? 0, 100)) / 100)
+                }
+            }
+            .frame(height: 6)
+            Group {
+                if let resets = source.reading?.resetsAt {
+                    Text("Resets in \(countdownFormat.string(from: max(0, resets.timeIntervalSinceNow)) ?? "") · \(resetFormat.string(from: resets))")
+                } else if source.reading == nil && source.error == nil {
+                    Text("Checking…")
+                }
+            }
+            .font(.system(size: 11)).foregroundStyle(.secondary)
+            if let error = source.error {
+                Label(error + (source.updated.map { " · last updated \(timeFormat.string(from: $0))" } ?? ""),
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .frame(width: menuWidth)
+    }
+}
+
+/// Green, then yellow, orange and red as usage gets closer to the limit.
+func levelColor(_ percent: Int) -> Color {
+    switch percent {
+    case ..<50: return .green
+    case ..<75: return .yellow
+    case ..<90: return .orange
+    default: return .red
+    }
+}
+
+func menuItem<Content: View>(_ view: Content) -> NSMenuItem {
+    let host = NSHostingView(rootView: view)
+    host.frame.size = host.fittingSize
+    let item = NSMenuItem()
+    item.view = host
+    return item
+}
+
 final class ClaudeCodexBar: NSObject, NSApplicationDelegate {
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    let sources = [Source("Claude", logo: "claude", fetchClaude), Source("Codex", logo: "openai", fetchCodex)]
-    let resetFormat = DateFormatter(), timeFormat = DateFormatter()
+    let sources = [Source("Claude", logo: "claude", tint: Color(red: 0.85, green: 0.47, blue: 0.34), fetchClaude),  // Claude orange
+                   Source("Codex", logo: "openai", tint: .primary, fetchCodex)]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        resetFormat.setLocalizedDateFormatFromTemplate("EEEdMMMjmm")
-        timeFormat.timeStyle = .short
         render()
         refresh()
         Timer.scheduledTimer(withTimeInterval: 5 * 60, repeats: true) { [weak self] _ in self?.refresh() }
@@ -197,17 +271,12 @@ final class ClaudeCodexBar: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
         for source in sources {
-            menu.addItem(withTitle: "\(source.name): " + (source.reading.map { "\($0.percent)% of weekly limit" } ?? "no data yet"),
-                         action: nil, keyEquivalent: "")
-            if let resets = source.reading?.resetsAt {
-                menu.addItem(withTitle: "    Resets \(resetFormat.string(from: resets))", action: nil, keyEquivalent: "")
-            }
-            if let updated = source.updated {
-                menu.addItem(withTitle: "    Updated \(timeFormat.string(from: updated))", action: nil, keyEquivalent: "")
-            }
-            if let error = source.error {
-                menu.addItem(withTitle: "    ⚠︎ \(error)", action: nil, keyEquivalent: "")
-            }
+            menu.addItem(menuItem(UsageCard(source: source)))
+        }
+        if let updated = sources.compactMap(\.updated).max() {
+            menu.addItem(menuItem(Text("Updated \(timeFormat.string(from: updated)) · refreshes every 5 minutes")
+                .font(.system(size: 11)).foregroundStyle(.tertiary)
+                .padding(.horizontal, 14).padding(.bottom, 6).frame(width: menuWidth, alignment: .leading)))
         }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Refresh Now", action: #selector(refresh), keyEquivalent: "r").target = self

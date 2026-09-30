@@ -32,10 +32,13 @@ To start ClaudeCodexBar automatically when your Mac starts, click it in the menu
 
 ## Using it
 
-The menu bar shows the percentage of each weekly limit you've used. Click it to see:
+The menu bar shows the percentage of each weekly limit you've used. Click it for the details:
 
-- each percentage, when that limit resets, and when it was last updated
-- the error from the last check, if there was one
+<img src="docs/dropdown.png" width="290" alt="The ClaudeCodexBar menu: a Claude card at 78% with an orange bar and a Codex card at 31% with a green bar, each with a countdown to its reset">
+
+- a card for each tool with its logo, the percentage and a countdown to the reset
+- a bar that goes from green to yellow, orange and red as you get close to the limit
+- a warning on the card if the last check failed (the last good number stays)
 - **Refresh Now** (⌘R), **Open at Login** and **Quit** (⌘Q)
 
 ## How it works
