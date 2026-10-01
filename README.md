@@ -75,6 +75,7 @@ cd ClaudeCodexBar
 ## Limitations
 
 - It relies on a Claude Code control request that isn't a public API and on Codex's experimental app server. An update to either tool could break it. If that happens, the menu shows the error and keeps the last good number.
+- If Claude Code can't reach Anthropic during a check (for example while you're offline), it answers with its last saved reading, up to an hour old, without reporting an error. The number catches up at the next check that gets through.
 - Codex reports a 5-hour limit only on some plans and at some times. When it doesn't, the Codex card shows just the weekly limit.
 - It doesn't show per-model weekly limits.
 - The app isn't notarized, so macOS asks you to approve it once (see [Install](#install)).

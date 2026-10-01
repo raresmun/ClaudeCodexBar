@@ -44,7 +44,11 @@ let childEnvironment = [
     "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin",  // npm-installed CLIs need `node`
     "LANG": "en_US.UTF-8",
     "TMPDIR": NSTemporaryDirectory(),
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",  // no update checks or telemetry from 288 polls a day
+    // No update checks or telemetry from 288 polls a day. Not CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: that also
+    // skips the usage request, and Claude Code then silently returns its last saved reading.
+    "DISABLE_AUTOUPDATER": "1",
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1",
 ]
 
 func findTool(_ name: String) -> String? {
