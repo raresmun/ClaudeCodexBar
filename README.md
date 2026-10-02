@@ -4,7 +4,7 @@
 
 Easy to use and simple Claude and Codex usage bar for macOS.
 
-ClaudeCodexBar shows how much of your **weekly** Claude Code and Codex limits you've used, right in the menu bar. Click it to see your 5-hour session limit too. It refreshes every 5 minutes, and it can keep your Mac awake while Claude or Codex is working.
+ClaudeCodexBar shows how much of your **weekly** Claude Code and Codex limits you've used, right in the menu bar. Click it to see your 5-hour session limit too. It refreshes every 5 minutes, and it can keep your Mac awake with one click.
 
 <img src="docs/menubar.png" width="266" alt="ClaudeCodexBar in the menu bar: the Claude logo with 42% and the OpenAI logo with 17%">
 
@@ -46,13 +46,9 @@ The menu bar shows the percentage of each weekly limit you've used. Click it for
 
 ## Keep your Mac awake
 
-Under **Keep Mac Awake** in the menu you can choose:
+Click **Keep Mac Awake** in the menu to turn it on or off. While it's on, your Mac doesn't go to sleep, the same as running `caffeinate -dimsu` in Terminal, and a small cup appears in the menu bar.
 
-- **Off:** your Mac sleeps as usual.
-- **While Claude or Codex Is Working:** keeps your Mac awake while Claude Code or Codex is busy, and for 10 minutes after their last activity, then lets it sleep. It notices activity from when their session files in `~/.claude/projects` and `~/.codex/sessions` last changed, and never reads what's in them.
-- **Always:** the same as running `caffeinate -dimsu` in Terminal.
-
-A small cup appears in the menu bar while your Mac is being kept awake, and your choice is remembered. It uses macOS's built-in `caffeinate`, which stops by itself if ClaudeCodexBar quits. It keeps the screen on too, so it drains the battery faster when you're unplugged.
+It's off whenever ClaudeCodexBar starts, and it stops by itself if ClaudeCodexBar quits. It keeps the screen on too, so it drains the battery faster when you're unplugged.
 
 ## How it works
 
