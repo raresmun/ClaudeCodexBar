@@ -157,14 +157,20 @@ func parseISODate(_ string: String?) -> Date? {
     return Date(timeIntervalSince1970: (date.timeIntervalSince1970 / 60).rounded() * 60)
 }
 
-/// Each tool's logo followed by its percentage, on one line.
-func barImage(_ items: [(logo: NSImage, value: String)]) -> NSImage {
+/// Each tool's logo followed by its percentage, on one line, with a cup in front while the Mac is kept awake.
+func barImage(_ items: [(logo: NSImage, value: String)], awake: Bool) -> NSImage {
     let font: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium)]
     let logoSize: CGFloat = 15, logoGap: CGFloat = 3, itemGap: CGFloat = 9, height: CGFloat = 22
+    let cup = awake ? NSImage(systemSymbolName: "cup.and.saucer.fill", accessibilityDescription: nil)?
+        .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)) : nil
+    let cupWidth = cup.map { $0.size.width + itemGap } ?? 0
     let widths = items.map { logoSize + logoGap + ($0.value as NSString).size(withAttributes: font).width.rounded(.up) }
-    let size = NSSize(width: widths.reduce(0, +) + itemGap * CGFloat(items.count - 1), height: height)
+    let size = NSSize(width: cupWidth + widths.reduce(0, +) + itemGap * CGFloat(items.count - 1), height: height)
     let image = NSImage(size: size, flipped: false) { _ in
-        var x: CGFloat = 0
+        if let cup {
+            cup.draw(in: NSRect(x: 0, y: (height - cup.size.height) / 2, width: cup.size.width, height: cup.size.height))
+        }
+        var x = cupWidth
         for (item, width) in zip(items, widths) {
             item.logo.draw(in: NSRect(x: x, y: (height - logoSize) / 2, width: logoSize, height: logoSize))
             let value = item.value as NSString
@@ -282,15 +288,69 @@ func menuItem<Content: View>(_ view: Content) -> NSMenuItem {
     return item
 }
 
+enum KeepAwake: String {
+    case off, automatic, always
+}
+
+/// Claude Code and Codex keep appending to their session files while they work, so a change in the last
+/// 10 minutes means one of them is busy. Only modification times are read, never the contents.
+func agentsWorking() -> Bool {
+    let since = Date() - 10 * 60
+    return ["\(home)/.claude/projects", "\(home)/.codex/sessions"].contains { folder in
+        let files = FileManager.default.enumerator(at: URL(fileURLWithPath: folder), includingPropertiesForKeys: [.contentModificationDateKey])
+        while let file = files?.nextObject() as? URL {
+            if let modified = try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, modified > since {
+                return true
+            }
+        }
+        return false
+    }
+}
+
 final class ClaudeCodexBar: NSObject, NSApplicationDelegate {
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     let sources = [Source("Claude", logo: "claude", tint: Color(red: 0.85, green: 0.47, blue: 0.34), fetchClaude),  // Claude orange
                    Source("Codex", logo: "openai", tint: .primary, fetchCodex)]
+    var keepAwake = KeepAwake(rawValue: UserDefaults.standard.string(forKey: "keepAwake") ?? "") ?? .off
+    var caffeinate: Process?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         render()
         refresh()
+        updateKeepAwake()
         Timer.scheduledTimer(withTimeInterval: 5 * 60, repeats: true) { [weak self] _ in self?.refresh() }
+        Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.updateKeepAwake() }
+    }
+
+    @objc func chooseKeepAwake(_ item: NSMenuItem) {
+        keepAwake = KeepAwake(rawValue: item.representedObject as? String ?? "") ?? .off
+        UserDefaults.standard.set(keepAwake.rawValue, forKey: "keepAwake")
+        updateKeepAwake()
+        render()
+    }
+
+    /// Runs `caffeinate -dimsu` while wanted: always, or in automatic mode while Claude Code or Codex is working.
+    func updateKeepAwake() {
+        let scan = keepAwake == .automatic
+        DispatchQueue.global().async {
+            let busy = scan && agentsWorking()  // the folder scan takes a moment, so it runs off the main thread
+            DispatchQueue.main.async {
+                let wanted = self.keepAwake == .always || (self.keepAwake == .automatic && busy)
+                guard wanted != (self.caffeinate?.isRunning == true) else { return }
+                if wanted {
+                    let process = Process()
+                    process.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
+                    // -w: caffeinate also stops by itself if this app quits or crashes
+                    process.arguments = ["-dimsu", "-w", String(ProcessInfo.processInfo.processIdentifier)]
+                    try? process.run()
+                    self.caffeinate = process
+                } else {
+                    self.caffeinate?.terminate()
+                    self.caffeinate = nil
+                }
+                self.render()
+            }
+        }
     }
 
     @objc func refresh() {
@@ -316,8 +376,10 @@ final class ClaudeCodexBar: NSObject, NSApplicationDelegate {
 
     func render() {
         let values = sources.map { ($0, $0.reading.map { "\($0.week.percent)%" } ?? "–") }
-        statusItem.button?.image = barImage(values.map { ($0.0.logo, $0.1) })
-        statusItem.button?.setAccessibilityLabel(values.map { "\($0.0.name) \($0.1)" }.joined(separator: ", "))  // the image has no text for VoiceOver
+        let awake = caffeinate?.isRunning == true
+        statusItem.button?.image = barImage(values.map { ($0.0.logo, $0.1) }, awake: awake)
+        statusItem.button?.setAccessibilityLabel(  // the image has no text for VoiceOver
+            values.map { "\($0.0.name) \($0.1)" }.joined(separator: ", ") + (awake ? ", keeping your Mac awake" : ""))
 
         let menu = NSMenu()
         for source in sources {
@@ -330,6 +392,15 @@ final class ClaudeCodexBar: NSObject, NSApplicationDelegate {
         }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Refresh Now", action: #selector(refresh), keyEquivalent: "r").target = self
+        let keepAwakeMenu = NSMenu()
+        let modes: [(KeepAwake, String)] = [(.off, "Off"), (.automatic, "While Claude or Codex Is Working"), (.always, "Always")]
+        for (mode, title) in modes {
+            let item = keepAwakeMenu.addItem(withTitle: title, action: #selector(chooseKeepAwake(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode.rawValue
+            item.state = keepAwake == mode ? .on : .off
+        }
+        menu.addItem(withTitle: "Keep Mac Awake", action: nil, keyEquivalent: "").submenu = keepAwakeMenu
         let openAtLogin = menu.addItem(withTitle: "Open at Login", action: #selector(toggleOpenAtLogin), keyEquivalent: "")
         openAtLogin.target = self
         openAtLogin.state = SMAppService.mainApp.status == .enabled ? .on : .off
